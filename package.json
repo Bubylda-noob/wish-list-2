@@ -1,0 +1,9 @@
+{
+  "name": "arina-wishlist",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Wishlist with automatic product metadata/photo import",
+  "scripts": {
+    "start": "npx serve ."
+  }
+}

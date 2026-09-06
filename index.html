@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#7c3aed">
+  <title>Мой вишлист 💜</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bg-orb orb-1"></div><div class="bg-orb orb-2"></div>
+
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">MY WISHLIST</div>
+      <h1>Мой вишлист 💜</h1>
+      <p>Здесь собраны маленькие и большие желания ✨</p>
+      <button class="add-btn" id="openAdd">＋ Добавить подарок</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="toolbar">
+      <div><strong id="count">0</strong> подарков</div>
+      <input id="search" type="search" placeholder="Поиск по вишлисту…">
+    </div>
+    <section id="grid" class="grid"></section>
+    <div id="empty" class="empty hidden">
+      <div class="empty-icon">🎁</div>
+      <h2>Пока ничего нет</h2>
+      <p>Добавь первый подарок по ссылке.</p>
+    </div>
+  </main>
+
+  <div class="modal hidden" id="addModal" aria-hidden="true">
+    <div class="modal-card">
+      <button class="close" data-close="addModal">×</button>
+      <h2>Добавить подарок</h2>
+      <p class="muted">
+        Вставь ссылку на Ozon, Wildberries, Детский мир или OZ.
+        Сайт попробует автоматически получить название, фото и описание товара.
+      </p>
+
+      <label>Ссылка на товар
+        <input id="urlInput" type="url" placeholder="https://...">
+      </label>
+
+      <div id="autoStatus" class="auto-status"></div>
+
+      <div class="manual-note">
+        Если магазин заблокирует автоматическое чтение, товар не будет добавлен
+        с выдуманными данными — покажется понятная ошибка.
+      </div>
+
+      <div class="manual-fields">
+        <details>
+          <summary>Заполнить вручную</summary>
+          <div class="form-row">
+            <label>Название<input id="titleInput" placeholder="Название"></label>
+            <label>Фото (URL)<input id="imageInput" type="url" placeholder="https://.../photo.jpg"></label>
+          </div>
+          <label>Описание<textarea id="descInput" rows="4" placeholder="Описание…"></textarea></label>
+        </details>
+      </div>
+
+      <div id="addError" class="error"></div>
+      <button class="primary" id="saveProduct">Добавить в вишлист</button>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="viewModal" aria-hidden="true">
+    <div class="modal-card product-modal">
+      <button class="close" data-close="viewModal">×</button>
+      <img id="viewImage" class="view-image" alt="">
+      <div class="store-badge" id="viewStore"></div>
+      <h2 id="viewTitle"></h2>
+      <p id="viewDesc" class="description"></p>
+      <div class="view-actions">
+        <a id="viewLink" class="primary link-btn" href="#" target="_blank" rel="noopener noreferrer">Перейти к товару ↗</a>
+        <button class="danger" id="deleteProduct">Удалить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
