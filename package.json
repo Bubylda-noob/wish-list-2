@@ -1,6 +1,6 @@
 {
   "name": "wishlist-project",
-  "version": "3.0.0",
+  "version": "5.0.0",
   "private": true,
   "description": "Wishlist with product metadata import",
   "scripts": {
