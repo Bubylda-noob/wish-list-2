@@ -49,3 +49,9 @@ label input,label textarea{display:block;width:100%;margin-top:7px;border:1px so
 button:disabled{opacity:.6}
 @media(max-width:900px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:680px){.hero{padding-top:45px}.container{width:min(100% - 24px,560px)}.toolbar{align-items:stretch;flex-direction:column}.toolbar-right{flex-direction:column;align-items:stretch}#search{width:100%}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.form-row{grid-template-columns:1fr}}
+
+.add-tabs{display:flex;gap:8px;margin:20px 0 8px;padding:4px;background:#f6f0fa;border-radius:14px}
+.add-tab{flex:1;border:0;background:transparent;color:#81758b;border-radius:10px;padding:10px;font-weight:800;cursor:pointer}
+.add-tab.active{background:#fff;color:#7c3aed;box-shadow:0 2px 8px rgba(72,38,104,.08)}
+select{display:block;width:100%;margin-top:7px;border:1px solid #e8deef;border-radius:12px;padding:12px;background:#fff;font:inherit;font-weight:400;outline:none}
+.manual-help{margin:8px 0 14px;padding:12px 14px;border-radius:12px;background:#f9f5fc;color:#756a7f;font-size:12px;line-height:1.55}
