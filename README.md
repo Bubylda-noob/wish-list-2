@@ -47,3 +47,8 @@ DevTools -> Application -> Local Storage -> домен сайта -> удали 
 ## Импорт Ozon / Wildberries v5
 
 API теперь использует несколько последовательных источников: нормализованные метаданные Microlink, полностью отрендеренный HTML через браузер и независимый прямой fetch. Для товара дополнительно разбираются JSON-LD, Next.js/React JSON и Open Graph/Twitter metadata. Это повышает шанс получить название и фотографию с динамических страниц Ozon и Wildberries.
+
+
+## V8: Ozon/Wildberries import
+
+Добавлены специализированные обработчики для Ozon и Wildberries. Для Wildberries сначала используется публичная карточка WB v4 и статическая CDN-карточка; для Ozon — внутренний JSON endpoint витрины. Anti-bot/challenge страницы больше не принимаются за название товара. Универсальный Microlink/HTML-парсер остаётся резервным вариантом.
