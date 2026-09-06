@@ -31,7 +31,8 @@ if (!products) {
     url: p.url || "",
     title: p.title || "",
     description: p.description || "",
-    image: p.image || ""
+    image: p.image || "",
+    reserved: Boolean(p.reserved)
   }));
   save();
 }
@@ -82,13 +83,10 @@ function render() {
     <article class="card ${p.reserved ? "is-reserved" : ""}" data-id="${esc(p.id)}">
       <div class="card-media">
         ${imageHtml(p)}
-        <button
-          class="reserve-btn ${p.reserved ? "active" : ""}"
-          data-reserve-id="${esc(p.id)}"
-          type="button"
-          aria-pressed="${p.reserved}"
-          title="${p.reserved ? "Снять отметку «Забронировано»" : "Отметить как забронированный"}"
-        >${p.reserved ? "✓ Забронировано" : "Отметить забронированным"}</button>
+        <button class="reserve-btn ${p.reserved ? "active" : ""}"
+          data-reserve-id="${esc(p.id)}" type="button" aria-pressed="${p.reserved}">
+          ${p.reserved ? "✓ Забронировано" : "Отметить забронированным"}
+        </button>
       </div>
       <div class="card-body">
         <div class="card-store">${esc(storeName(p.url, p.manualStore))}</div>
@@ -116,11 +114,9 @@ function render() {
 function toggleReserved(id) {
   const p = products.find(x => x.id === id);
   if (!p) return;
-
   p.reserved = !p.reserved;
   save();
   render();
-
   if (activeId === id && !document.getElementById("viewModal").classList.contains("hidden")) {
     updateViewReservation(p);
   }
@@ -257,6 +253,9 @@ document.querySelectorAll(".modal").forEach(m =>
 document.getElementById("saveProduct").onclick = async () => {
   const url = document.getElementById("urlInput").value.trim();
   const error = document.getElementById("addError");
+  // В автоматическом режиме дополнительных полей нет.
+  // Раньше здесь были ссылки на несуществующие элементы, из-за чего
+  // JavaScript падал до вызова API и кнопка ничего не делала.
   const titleManual = "";
   const imageManual = "";
   const descManual = "";
