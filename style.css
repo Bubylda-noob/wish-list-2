@@ -55,3 +55,24 @@ button:disabled{opacity:.6}
 .add-tab.active{background:#fff;color:#7c3aed;box-shadow:0 2px 8px rgba(72,38,104,.08)}
 select{display:block;width:100%;margin-top:7px;border:1px solid #e8deef;border-radius:12px;padding:12px;background:#fff;font:inherit;font-weight:400;outline:none}
 .manual-help{margin:8px 0 14px;padding:12px 14px;border-radius:12px;background:#f9f5fc;color:#756a7f;font-size:12px;line-height:1.55}
+
+.card-media{position:relative}
+.reserve-btn{
+  position:absolute;left:10px;right:10px;bottom:10px;
+  border:1px solid rgba(255,255,255,.8);background:rgba(255,255,255,.94);
+  color:#6d28d9;border-radius:12px;padding:9px 10px;font-size:12px;
+  font-weight:900;cursor:pointer;backdrop-filter:blur(8px)
+}
+.reserve-btn:hover{background:#fff}
+.reserve-btn.active{background:#7c3aed;color:#fff;border-color:#7c3aed}
+.card.is-reserved{border-color:#c4b5fd}
+.card.is-reserved .card-title{color:#6d28d9}
+.reserve-modal-btn{
+  border:1px solid #e5d9ee;background:#fff;color:#6d28d9;border-radius:14px;
+  padding:13px 18px;font-weight:800;cursor:pointer
+}
+.reserve-modal-btn.active{background:#7c3aed;color:#fff;border-color:#7c3aed}
+@media(max-width:680px){
+  .view-actions{flex-wrap:wrap}
+  .reserve-modal-btn,.link-btn,.danger{flex:1}
+}

@@ -36,6 +36,8 @@ if (!products) {
   save();
 }
 
+products = products.map(p => ({ ...p, reserved: Boolean(p.reserved) }));
+
 function save() {
   localStorage.setItem(key, JSON.stringify(products));
 }
@@ -77,8 +79,17 @@ function render() {
   document.getElementById("empty").classList.toggle("hidden", list.length !== 0);
 
   document.getElementById("grid").innerHTML = list.map(p => `
-    <article class="card" data-id="${esc(p.id)}">
-      <div class="card-media">${imageHtml(p)}</div>
+    <article class="card ${p.reserved ? "is-reserved" : ""}" data-id="${esc(p.id)}">
+      <div class="card-media">
+        ${imageHtml(p)}
+        <button
+          class="reserve-btn ${p.reserved ? "active" : ""}"
+          data-reserve-id="${esc(p.id)}"
+          type="button"
+          aria-pressed="${p.reserved}"
+          title="${p.reserved ? "Снять отметку «Забронировано»" : "Отметить как забронированный"}"
+        >${p.reserved ? "✓ Забронировано" : "Отметить забронированным"}</button>
+      </div>
       <div class="card-body">
         <div class="card-store">${esc(storeName(p.url, p.manualStore))}</div>
         <div class="card-title">${esc(p.title || "Данные товара ещё не получены")}</div>
@@ -88,8 +99,39 @@ function render() {
   `).join("");
 
   document.querySelectorAll(".card").forEach(c =>
-    c.onclick = () => openView(c.dataset.id)
+    c.onclick = e => {
+      if (e.target.closest(".reserve-btn")) return;
+      openView(c.dataset.id);
+    }
   );
+
+  document.querySelectorAll(".reserve-btn").forEach(btn =>
+    btn.onclick = e => {
+      e.stopPropagation();
+      toggleReserved(btn.dataset.reserveId);
+    }
+  );
+}
+
+function toggleReserved(id) {
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+
+  p.reserved = !p.reserved;
+  save();
+  render();
+
+  if (activeId === id && !document.getElementById("viewModal").classList.contains("hidden")) {
+    updateViewReservation(p);
+  }
+}
+
+function updateViewReservation(p) {
+  const btn = document.getElementById("toggleReserved");
+  if (!btn) return;
+  btn.textContent = p.reserved ? "✓ Забронировано" : "Отметить как забронированное";
+  btn.classList.toggle("active", Boolean(p.reserved));
+  btn.setAttribute("aria-pressed", String(Boolean(p.reserved)));
 }
 
 function setStatus(text, type = "") {
@@ -121,6 +163,7 @@ function openView(id) {
   document.getElementById("viewDesc").textContent =
     p.description || "Описание не получено.";
   document.getElementById("viewStore").textContent = storeName(p.url, p.manualStore);
+  updateViewReservation(p);
 
   const link = document.getElementById("viewLink");
   link.href = p.url;
@@ -214,9 +257,9 @@ document.querySelectorAll(".modal").forEach(m =>
 document.getElementById("saveProduct").onclick = async () => {
   const url = document.getElementById("urlInput").value.trim();
   const error = document.getElementById("addError");
-  const titleManual = document.getElementById("titleInput").value.trim();
-  const imageManual = document.getElementById("imageInput").value.trim();
-  const descManual = document.getElementById("descInput").value.trim();
+  const titleManual = "";
+  const imageManual = "";
+  const descManual = "";
   error.textContent = "";
 
   try {
@@ -243,16 +286,15 @@ document.getElementById("saveProduct").onclick = async () => {
       url,
       title: data.title || titleManual || "Новый подарок",
       image: data.image || imageManual || "",
-      description: data.description || descManual || ""
+      description: data.description || descManual || "",
+      reserved: false
     });
 
     save();
     render();
     closeModal("addModal");
 
-    ["urlInput", "titleInput", "imageInput", "descInput"].forEach(id =>
-      document.getElementById(id).value = ""
-    );
+    document.getElementById("urlInput").value = "";
     document.getElementById("autoStatus").textContent = "";
   } catch (e) {
     error.textContent = e.message || "Не удалось получить данные товара.";
@@ -299,7 +341,8 @@ document.getElementById("addManual").onclick = () => {
     title,
     image,
     description,
-    manualStore: store
+    manualStore: store,
+    reserved: false
   });
 
   save();
@@ -309,6 +352,11 @@ document.getElementById("addManual").onclick = () => {
   ["manualUrlInput", "manualTitle", "manualImage", "manualDesc"].forEach(id => {
     document.getElementById(id).value = "";
   });
+};
+
+document.getElementById("toggleReserved").onclick = () => {
+  if (!activeId) return;
+  toggleReserved(activeId);
 };
 
 document.getElementById("deleteProduct").onclick = () => {
