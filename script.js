@@ -40,7 +40,8 @@ function save() {
   localStorage.setItem(key, JSON.stringify(products));
 }
 
-function storeName(url) {
+function storeName(url, manualStore = "") {
+  if (manualStore) return manualStore;
   try {
     const h = new URL(url).hostname.replace("www.", "");
     if (h.includes("ozon")) return "Ozon";
@@ -68,7 +69,7 @@ function imageHtml(p) {
 function render() {
   const q = document.getElementById("search").value.toLowerCase().trim();
   const list = products.filter(p =>
-    (p.title + " " + p.description + " " + storeName(p.url))
+    (p.title + " " + p.description + " " + storeName(p.url, p.manualStore))
       .toLowerCase().includes(q)
   );
 
@@ -79,7 +80,7 @@ function render() {
     <article class="card" data-id="${esc(p.id)}">
       <div class="card-media">${imageHtml(p)}</div>
       <div class="card-body">
-        <div class="card-store">${esc(storeName(p.url))}</div>
+        <div class="card-store">${esc(storeName(p.url, p.manualStore))}</div>
         <div class="card-title">${esc(p.title || "Данные товара ещё не получены")}</div>
         <div class="card-open">Открыть карточку →</div>
       </div>
@@ -119,7 +120,7 @@ function openView(id) {
     p.title || "Данные товара ещё не получены";
   document.getElementById("viewDesc").textContent =
     p.description || "Описание не получено.";
-  document.getElementById("viewStore").textContent = storeName(p.url);
+  document.getElementById("viewStore").textContent = storeName(p.url, p.manualStore);
 
   const link = document.getElementById("viewLink");
   link.href = p.url;
@@ -158,7 +159,7 @@ async function refreshAll() {
 
   let ok = 0, failed = 0;
   for (const p of products) {
-    if (!p.url) continue;
+    if (!p.url || p.manualStore) continue;
     try {
       await refreshOne(p);
       ok++;
@@ -185,8 +186,21 @@ function setLoading(isLoading) {
   btn.textContent = isLoading ? "Получаю данные товара…" : "Добавить в вишлист";
 }
 
-document.getElementById("openAdd").onclick = () => openModal("addModal");
+document.getElementById("openAdd").onclick = () => {
+  openModal("addModal");
+  showAddMode("auto");
+};
 document.getElementById("refreshAll").onclick = refreshAll;
+
+function showAddMode(mode) {
+  const auto = mode === "auto";
+  document.getElementById("autoForm").classList.toggle("hidden", !auto);
+  document.getElementById("manualForm").classList.toggle("hidden", auto);
+  document.getElementById("autoTab").classList.toggle("active", auto);
+  document.getElementById("manualTab").classList.toggle("active", !auto);
+}
+document.getElementById("autoTab").onclick = () => showAddMode("auto");
+document.getElementById("manualTab").onclick = () => showAddMode("manual");
 document.getElementById("search").oninput = render;
 
 document.querySelectorAll("[data-close]").forEach(b =>
@@ -245,6 +259,56 @@ document.getElementById("saveProduct").onclick = async () => {
   } finally {
     setLoading(false);
   }
+};
+
+document.getElementById("addManual").onclick = () => {
+  const url = document.getElementById("manualUrlInput").value.trim();
+  const store = document.getElementById("manualStore").value;
+  const title = document.getElementById("manualTitle").value.trim();
+  const image = document.getElementById("manualImage").value.trim();
+  const description = document.getElementById("manualDesc").value.trim();
+  const error = document.getElementById("manualError");
+  error.textContent = "";
+
+  if (!title) {
+    error.textContent = "Укажи название товара.";
+    return;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+  } catch {
+    error.textContent = "Укажи корректную ссылку на товар.";
+    return;
+  }
+
+  if (image) {
+    try {
+      const parsedImage = new URL(image);
+      if (!["http:", "https:"].includes(parsedImage.protocol)) throw new Error();
+    } catch {
+      error.textContent = "Ссылка на фото должна начинаться с http:// или https://.";
+      return;
+    }
+  }
+
+  products.unshift({
+    id: crypto.randomUUID(),
+    url,
+    title,
+    image,
+    description,
+    manualStore: store
+  });
+
+  save();
+  render();
+  closeModal("addModal");
+
+  ["manualUrlInput", "manualTitle", "manualImage", "manualDesc"].forEach(id => {
+    document.getElementById(id).value = "";
+  });
 };
 
 document.getElementById("deleteProduct").onclick = () => {
