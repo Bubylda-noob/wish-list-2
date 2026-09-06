@@ -1,8 +1,8 @@
 {
   "name": "wishlist-project",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "private": true,
-  "description": "Wishlist with product metadata import",
+  "description": "Shared wishlist with Supabase database, realtime sync and product metadata import",
   "scripts": {
     "start": "npx serve ."
   }

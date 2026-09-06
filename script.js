@@ -12,35 +12,17 @@ const INITIAL_PRODUCTS = [
   {url:"https://detmir.by/product/index/id/3156071/"}
 ];
 
-const key = "arinaWishlistV3";
-const oldKeys = ["arinaWishlistV2", "arinaWishlistV1"];
-let products = JSON.parse(localStorage.getItem(key) || "null");
+const LOCAL_KEY = "arinaWishlistV3";
+const MIGRATION_KEY = "arinaWishlistSupabaseMigrationV1";
+let products = [];
 let activeId = null;
+let supabase = null;
+let realtimeChannel = null;
 
-if (!products) {
-  let old = null;
-  for (const k of oldKeys) {
-    try {
-      old = JSON.parse(localStorage.getItem(k) || "null");
-      if (old) break;
-    } catch {}
-  }
-  products = old || INITIAL_PRODUCTS.map(p => ({...p}));
-  products = products.map(p => ({
-    id: p.id || crypto.randomUUID(),
-    url: p.url || "",
-    title: p.title || "",
-    description: p.description || "",
-    image: p.image || "",
-    reserved: Boolean(p.reserved)
-  }));
-  save();
-}
-
-products = products.map(p => ({ ...p, reserved: Boolean(p.reserved) }));
-
-function save() {
-  localStorage.setItem(key, JSON.stringify(products));
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, m => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;"
+  }[m]));
 }
 
 function storeName(url, manualStore = "") {
@@ -55,24 +37,19 @@ function storeName(url, manualStore = "") {
   } catch { return "Магазин"; }
 }
 
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, m => ({
-    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;"
-  }[m]));
-}
-
 function imageHtml(p) {
   if (!p.image) {
     return `<div class="no-image"><span>🖼️</span><small>Фото не получено</small></div>`;
   }
   return `<img class="card-img" src="${esc(p.image)}" alt="" loading="lazy"
-    onerror="this.closest('.card').querySelector('.card-img').outerHTML='<div class=&quot;no-image&quot;><span>🖼️</span><small>Фото недоступно</small></div>'">`;
+    onerror="this.outerHTML='<div class=&quot;no-image&quot;><span>🖼️</span><small>Фото недоступно</small></div>'">`;
 }
 
 function render() {
-  const q = document.getElementById("search").value.toLowerCase().trim();
+  const search = document.getElementById("search");
+  const q = (search?.value || "").toLowerCase().trim();
   const list = products.filter(p =>
-    (p.title + " " + p.description + " " + storeName(p.url, p.manualStore))
+    (p.title + " " + p.description + " " + storeName(p.url, p.manual_store || p.manualStore))
       .toLowerCase().includes(q)
   );
 
@@ -89,38 +66,33 @@ function render() {
         </button>
       </div>
       <div class="card-body">
-        <div class="card-store">${esc(storeName(p.url, p.manualStore))}</div>
+        <div class="card-store">${esc(storeName(p.url, p.manual_store || p.manualStore))}</div>
         <div class="card-title">${esc(p.title || "Данные товара ещё не получены")}</div>
         <div class="card-open">Открыть карточку →</div>
       </div>
     </article>
   `).join("");
 
-  document.querySelectorAll(".card").forEach(c =>
-    c.onclick = e => {
-      if (e.target.closest(".reserve-btn")) return;
-      openView(c.dataset.id);
-    }
-  );
+  document.querySelectorAll(".card").forEach(c => c.onclick = e => {
+    if (e.target.closest(".reserve-btn")) return;
+    openView(c.dataset.id);
+  });
 
-  document.querySelectorAll(".reserve-btn").forEach(btn =>
-    btn.onclick = e => {
-      e.stopPropagation();
-      toggleReserved(btn.dataset.reserveId);
-    }
-  );
+  document.querySelectorAll(".reserve-btn").forEach(btn => btn.onclick = e => {
+    e.stopPropagation();
+    toggleReserved(btn.dataset.reserveId);
+  });
 }
 
-function toggleReserved(id) {
-  const p = products.find(x => x.id === id);
-  if (!p) return;
-  p.reserved = !p.reserved;
-  save();
-  render();
-  if (activeId === id && !document.getElementById("viewModal").classList.contains("hidden")) {
-    updateViewReservation(p);
-  }
+function setStatus(text, type = "") {
+  const el = document.getElementById("syncStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.className = "sync-status " + type;
 }
+
+function openModal(id) { document.getElementById(id).classList.remove("hidden"); }
+function closeModal(id) { document.getElementById(id).classList.add("hidden"); }
 
 function updateViewReservation(p) {
   const btn = document.getElementById("toggleReserved");
@@ -130,46 +102,206 @@ function updateViewReservation(p) {
   btn.setAttribute("aria-pressed", String(Boolean(p.reserved)));
 }
 
-function setStatus(text, type = "") {
-  const el = document.getElementById("syncStatus");
-  el.textContent = text;
-  el.className = "sync-status " + type;
-}
-
-function openModal(id) {
-  document.getElementById(id).classList.remove("hidden");
-}
-
-function closeModal(id) {
-  document.getElementById(id).classList.add("hidden");
-}
-
 function openView(id) {
   activeId = id;
   const p = products.find(x => x.id === id);
   if (!p) return;
 
-  const wrap = document.getElementById("viewImageWrap");
-  wrap.innerHTML = p.image
+  document.getElementById("viewImageWrap").innerHTML = p.image
     ? `<img id="viewImage" class="view-image" src="${esc(p.image)}" alt="">`
     : `<div class="view-no-image">Фото товара не получено</div>`;
 
-  document.getElementById("viewTitle").textContent =
-    p.title || "Данные товара ещё не получены";
-  document.getElementById("viewDesc").textContent =
-    p.description || "Описание не получено.";
-  document.getElementById("viewStore").textContent = storeName(p.url, p.manualStore);
+  document.getElementById("viewTitle").textContent = p.title || "Данные товара ещё не получены";
+  document.getElementById("viewDesc").textContent = p.description || "Описание не получено.";
+  document.getElementById("viewStore").textContent = storeName(p.url, p.manual_store || p.manualStore);
   updateViewReservation(p);
 
   const link = document.getElementById("viewLink");
   link.href = p.url;
   link.onclick = () => {
-    // Надёжно открываем исходную страницу в новой вкладке.
     window.open(p.url, "_blank", "noopener,noreferrer");
     return false;
   };
 
   openModal("viewModal");
+}
+
+function localProducts() {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(p => p && p.url).map(p => ({
+      url: p.url,
+      title: p.title || "",
+      description: p.description || "",
+      image: p.image || "",
+      manual_store: p.manual_store || p.manualStore || "",
+      reserved: Boolean(p.reserved)
+    }));
+  } catch { return []; }
+}
+
+function saveLocalCache() {
+  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(products)); } catch {}
+}
+
+async function initSupabase() {
+  const cfg = window.SUPABASE_CONFIG || {};
+  if (!cfg.url || !cfg.anonKey || cfg.url.includes("YOUR-PROJECT")) {
+    throw new Error("Не настроен Supabase. Создай supabase-config.js по инструкции в README.");
+  }
+  if (!window.supabase?.createClient) {
+    throw new Error("Не загрузилась библиотека Supabase.");
+  }
+  supabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+}
+
+function normalizeRow(row) {
+  return {
+    id: row.id,
+    url: row.url || "",
+    title: row.title || "",
+    description: row.description || "",
+    image: row.image || "",
+    manual_store: row.manual_store || "",
+    reserved: Boolean(row.reserved),
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+async function loadProducts() {
+  const { data, error } = await supabase
+    .from("wishlist_products")
+    .select("id,url,title,description,image,manual_store,reserved,created_at,updated_at")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  products = (data || []).map(normalizeRow);
+  saveLocalCache();
+}
+
+async function migrateLocalProducts() {
+  if (localStorage.getItem(MIGRATION_KEY)) return;
+
+  const old = localProducts();
+  if (!old.length) {
+    localStorage.setItem(MIGRATION_KEY, "1");
+    return;
+  }
+
+  const existing = new Set(products.map(p => p.url));
+  let added = 0;
+
+  for (const p of old) {
+    if (!p.url || existing.has(p.url)) continue;
+    const { error } = await supabase.from("wishlist_products").insert({
+      url: p.url,
+      title: p.title,
+      description: p.description,
+      image: p.image,
+      manual_store: p.manual_store,
+      reserved: p.reserved
+    });
+    if (!error) {
+      added++;
+      existing.add(p.url);
+    }
+  }
+
+  // Если старый браузер уже содержал данные для стартовых ссылок,
+  // аккуратно переносим только пустые поля, не перезаписывая общую бронь.
+  for (const oldProduct of old) {
+    const current = products.find(p => p.url === oldProduct.url);
+    if (!current) continue;
+    const patch = {};
+    if (!current.title && oldProduct.title) patch.title = oldProduct.title;
+    if (!current.description && oldProduct.description) patch.description = oldProduct.description;
+    if (!current.image && oldProduct.image) patch.image = oldProduct.image;
+    if (!current.manual_store && oldProduct.manual_store) patch.manual_store = oldProduct.manual_store;
+    if (Object.keys(patch).length) {
+      await supabase.from("wishlist_products").update(patch).eq("id", current.id);
+    }
+  }
+
+  localStorage.setItem(MIGRATION_KEY, "1");
+  if (added) await loadProducts();
+}
+
+function subscribeRealtime() {
+  if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+
+  realtimeChannel = supabase
+    .channel("wishlist-products-live")
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "wishlist_products"
+    }, payload => {
+      if (payload.eventType === "INSERT") {
+        const incoming = normalizeRow(payload.new);
+        if (!products.some(p => p.id === incoming.id)) products.push(incoming);
+      } else if (payload.eventType === "UPDATE") {
+        const incoming = normalizeRow(payload.new);
+        const index = products.findIndex(p => p.id === incoming.id);
+        if (index >= 0) products[index] = incoming;
+        else products.push(incoming);
+      } else if (payload.eventType === "DELETE") {
+        products = products.filter(p => p.id !== payload.old.id);
+        if (activeId === payload.old.id) closeModal("viewModal");
+      }
+      saveLocalCache();
+      render();
+      if (activeId) {
+        const active = products.find(p => p.id === activeId);
+        if (active) updateViewReservation(active);
+      }
+      setStatus("синхронизировано", "ok");
+    })
+    .subscribe(status => {
+      if (status === "SUBSCRIBED") setStatus("онлайн · общая база", "ok");
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setStatus("нет realtime-связи", "warn");
+    });
+}
+
+async function updateProduct(id, patch) {
+  const { data, error } = await supabase
+    .from("wishlist_products")
+    .update(patch)
+    .eq("id", id)
+    .select("id,url,title,description,image,manual_store,reserved,created_at,updated_at")
+    .single();
+  if (error) throw error;
+  const updated = normalizeRow(data);
+  const index = products.findIndex(p => p.id === id);
+  if (index >= 0) products[index] = updated;
+  else products.push(updated);
+  saveLocalCache();
+  render();
+  return updated;
+}
+
+async function insertProduct(product) {
+  const { data, error } = await supabase
+    .from("wishlist_products")
+    .insert(product)
+    .select("id,url,title,description,image,manual_store,reserved,created_at,updated_at")
+    .single();
+  if (error) throw error;
+  const created = normalizeRow(data);
+  products.push(created);
+  saveLocalCache();
+  render();
+  return created;
+}
+
+async function deleteProduct(id) {
+  const { error } = await supabase.from("wishlist_products").delete().eq("id", id);
+  if (error) throw error;
+  products = products.filter(p => p.id !== id);
+  saveLocalCache();
+  render();
 }
 
 async function fetchProduct(url) {
@@ -184,39 +316,44 @@ async function fetchProduct(url) {
 
 async function refreshOne(p) {
   const data = await fetchProduct(p.url);
-  if (data.title) p.title = data.title;
-  if (data.description) p.description = data.description;
-  if (data.image) p.image = data.image;
-  if (data.sourceUrl) p.url = data.sourceUrl;
-  return p;
+  const patch = {};
+  if (data.title) patch.title = data.title;
+  if (data.description) patch.description = data.description;
+  if (data.image) patch.image = data.image;
+  if (data.sourceUrl) patch.url = data.sourceUrl;
+  if (!Object.keys(patch).length) return p;
+  return updateProduct(p.id, patch);
 }
 
 async function refreshAll() {
   const btn = document.getElementById("refreshAll");
   btn.disabled = true;
-  setStatus("обновляю…");
-
+  setStatus("обновляю данные…");
   let ok = 0, failed = 0;
-  for (const p of products) {
-    if (!p.url || p.manualStore) continue;
+
+  // Последовательно, чтобы не перегружать API маркетплейсов и Vercel.
+  for (const p of [...products]) {
+    if (!p.url || p.manual_store) continue;
     try {
       await refreshOne(p);
       ok++;
-      save();
-      render();
     } catch {
       failed++;
     }
   }
 
   btn.disabled = false;
-  if (failed) {
-    setStatus(`готово: ${ok}, не удалось: ${failed}`, "warn");
-  } else {
-    setStatus(`обновлено: ${ok}`, "ok");
+  setStatus(failed ? `обновлено: ${ok}, не удалось: ${failed}` : `обновлено: ${ok}`, failed ? "warn" : "ok");
+}
+
+async function toggleReserved(id) {
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+  try {
+    await updateProduct(id, { reserved: !p.reserved });
+  } catch (e) {
+    setStatus("Не удалось изменить бронь", "warn");
   }
-  save();
-  render();
 }
 
 function setLoading(isLoading) {
@@ -225,12 +362,6 @@ function setLoading(isLoading) {
   btn.textContent = isLoading ? "Получаю данные товара…" : "Добавить в вишлист";
 }
 
-document.getElementById("openAdd").onclick = () => {
-  openModal("addModal");
-  showAddMode("auto");
-};
-document.getElementById("refreshAll").onclick = refreshAll;
-
 function showAddMode(mode) {
   const auto = mode === "auto";
   document.getElementById("autoForm").classList.toggle("hidden", !auto);
@@ -238,27 +369,49 @@ function showAddMode(mode) {
   document.getElementById("autoTab").classList.toggle("active", auto);
   document.getElementById("manualTab").classList.toggle("active", !auto);
 }
+
+async function start() {
+  try {
+    await initSupabase();
+    setStatus("подключаюсь к общей базе…");
+    await loadProducts();
+
+    // Одноразово переносим товары из старой localStorage-версии,
+    // если они были у владельца до перехода на общую базу.
+    await migrateLocalProducts();
+    await loadProducts();
+    render();
+    subscribeRealtime();
+
+    // После загрузки общей базы пробуем обновить метаданные карточек.
+    setTimeout(() => refreshAll().catch(() => {}), 400);
+  } catch (e) {
+    console.error(e);
+    setStatus("ошибка подключения", "warn");
+    document.getElementById("grid").innerHTML = `
+      <div class="empty" style="grid-column:1/-1">
+        <div class="empty-icon">⚠️</div>
+        <h2>Не удалось подключить общую базу</h2>
+        <p>${esc(e.message || "Проверь настройки Supabase.")}</p>
+      </div>`;
+  }
+}
+
+document.getElementById("openAdd").onclick = () => {
+  openModal("addModal");
+  showAddMode("auto");
+};
+document.getElementById("refreshAll").onclick = refreshAll;
 document.getElementById("autoTab").onclick = () => showAddMode("auto");
 document.getElementById("manualTab").onclick = () => showAddMode("manual");
 document.getElementById("search").oninput = render;
 
-document.querySelectorAll("[data-close]").forEach(b =>
-  b.onclick = () => closeModal(b.dataset.close)
-);
-
-document.querySelectorAll(".modal").forEach(m =>
-  m.onclick = e => { if (e.target === m) closeModal(m.id); }
-);
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => closeModal(b.dataset.close));
+document.querySelectorAll(".modal").forEach(m => m.onclick = e => { if (e.target === m) closeModal(m.id); });
 
 document.getElementById("saveProduct").onclick = async () => {
   const url = document.getElementById("urlInput").value.trim();
   const error = document.getElementById("addError");
-  // В автоматическом режиме дополнительных полей нет.
-  // Раньше здесь были ссылки на несуществующие элементы, из-за чего
-  // JavaScript падал до вызова API и кнопка ничего не делала.
-  const titleManual = "";
-  const imageManual = "";
-  const descManual = "";
   error.textContent = "";
 
   try {
@@ -270,31 +423,24 @@ document.getElementById("saveProduct").onclick = async () => {
   }
 
   setLoading(true);
-
   try {
     let data = {};
-    try {
-      data = await fetchProduct(url);
-    } catch (apiError) {
-      // Если пользователь заполнил ручные поля, разрешаем ручное добавление.
-      if (!titleManual && !imageManual && !descManual) throw apiError;
+    try { data = await fetchProduct(url); }
+    catch (apiError) {
+      throw apiError;
     }
 
-    products.unshift({
-      id: crypto.randomUUID(),
+    await insertProduct({
       url,
-      title: data.title || titleManual || "Новый подарок",
-      image: data.image || imageManual || "",
-      description: data.description || descManual || "",
+      title: data.title || "Новый подарок",
+      image: data.image || "",
+      description: data.description || "",
+      manual_store: "",
       reserved: false
     });
 
-    save();
-    render();
     closeModal("addModal");
-
     document.getElementById("urlInput").value = "";
-    document.getElementById("autoStatus").textContent = "";
   } catch (e) {
     error.textContent = e.message || "Не удалось получить данные товара.";
   } finally {
@@ -302,7 +448,7 @@ document.getElementById("saveProduct").onclick = async () => {
   }
 };
 
-document.getElementById("addManual").onclick = () => {
+document.getElementById("addManual").onclick = async () => {
   const url = document.getElementById("manualUrlInput").value.trim();
   const store = document.getElementById("manualStore").value;
   const title = document.getElementById("manualTitle").value.trim();
@@ -311,63 +457,45 @@ document.getElementById("addManual").onclick = () => {
   const error = document.getElementById("manualError");
   error.textContent = "";
 
-  if (!title) {
-    error.textContent = "Укажи название товара.";
-    return;
-  }
-
+  if (!title) { error.textContent = "Укажи название товара."; return; }
   try {
     const parsed = new URL(url);
     if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
-  } catch {
-    error.textContent = "Укажи корректную ссылку на товар.";
-    return;
-  }
+  } catch { error.textContent = "Укажи корректную ссылку на товар."; return; }
 
   if (image) {
     try {
       const parsedImage = new URL(image);
       if (!["http:", "https:"].includes(parsedImage.protocol)) throw new Error();
-    } catch {
-      error.textContent = "Ссылка на фото должна начинаться с http:// или https://.";
-      return;
-    }
+    } catch { error.textContent = "Ссылка на фото должна начинаться с http:// или https://."; return; }
   }
 
-  products.unshift({
-    id: crypto.randomUUID(),
-    url,
-    title,
-    image,
-    description,
-    manualStore: store,
-    reserved: false
-  });
-
-  save();
-  render();
-  closeModal("addModal");
-
-  ["manualUrlInput", "manualTitle", "manualImage", "manualDesc"].forEach(id => {
-    document.getElementById(id).value = "";
-  });
+  try {
+    await insertProduct({
+      url, title, image, description,
+      manual_store: store,
+      reserved: false
+    });
+    closeModal("addModal");
+    ["manualUrlInput", "manualTitle", "manualImage", "manualDesc"].forEach(id => document.getElementById(id).value = "");
+  } catch (e) {
+    error.textContent = e.message || "Не удалось добавить товар.";
+  }
 };
 
 document.getElementById("toggleReserved").onclick = () => {
-  if (!activeId) return;
-  toggleReserved(activeId);
+  if (activeId) toggleReserved(activeId);
 };
 
-document.getElementById("deleteProduct").onclick = () => {
+document.getElementById("deleteProduct").onclick = async () => {
   if (!activeId) return;
-  products = products.filter(p => p.id !== activeId);
-  save();
-  render();
-  closeModal("viewModal");
+  try {
+    await deleteProduct(activeId);
+    closeModal("viewModal");
+  } catch (e) {
+    setStatus("Не удалось удалить товар", "warn");
+  }
 };
 
 render();
-
-// ВАЖНО: старые карточки автоматически обновляются при загрузке.
-// Раньше проект этого не делал, поэтому у пользователя оставались заглушки.
-setTimeout(refreshAll, 250);
+start();
