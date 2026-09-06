@@ -1,3 +1,5 @@
+window.SUPABASE_CONFIG = window.SUPABASE_CONFIG || { url: "", anonKey: "" };
+
 const INITIAL_PRODUCTS = [
   {url:"https://ozon.by/t/9oSz2kd"},
   {url:"https://ozon.by/t/j7F5gzy"},
@@ -149,16 +151,19 @@ function saveLocalCache() {
 
 async function initSupabase() {
   const cfg = window.SUPABASE_CONFIG || {};
-  if (!cfg.url || !cfg.anonKey || cfg.url.includes("YOUR-PROJECT") || cfg.anonKey.includes("YOUR_PUBLISHABLE")) {
+  const url = String(cfg.url || "").trim();
+  const key = String(cfg.anonKey || "").trim();
+  if (!url || !key || !/^https:\/\/[^\s]+\.supabase\.co$/.test(url) || key.includes("YOUR_") || key.includes("YOUR-PROJECT")) {
     supabase = null;
     return false;
   }
-  if (!window.supabase?.createClient) {
+  if (!window.supabase || typeof window.supabase.createClient !== "function") {
+    console.warn("Supabase library is unavailable; using local mode.");
     supabase = null;
     return false;
   }
   try {
-    supabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+    supabase = window.supabase.createClient(url, key, { auth: { persistSession: false } });
     return true;
   } catch (e) {
     console.warn("Supabase disabled:", e);
@@ -442,14 +447,32 @@ async function start() {
     // После загрузки пробуем обновить метаданные карточек.
     setTimeout(() => refreshAll().catch(() => {}), 400);
   } catch (e) {
-    console.error(e);
-    setStatus("ошибка подключения", "warn");
-    document.getElementById("grid").innerHTML = `
-      <div class="empty" style="grid-column:1/-1">
-        <div class="empty-icon">⚠️</div>
-        <h2>Не удалось подключить общую базу</h2>
-        <p>${esc(e.message || "Проверь настройки Supabase.")}</p>
-      </div>`;
+    console.error("Startup error:", e);
+    // Never leave the page unusable because of Supabase/API errors.
+    supabase = null;
+    try {
+      products = localProducts().map((p, i) => ({
+        id: p.id || "local-" + i,
+        url: p.url,
+        title: p.title || "",
+        description: p.description || "",
+        image: p.image || "",
+        manual_store: p.manual_store || "",
+        reserved: Boolean(p.reserved),
+        created_at: p.created_at || new Date().toISOString(),
+        updated_at: p.updated_at || new Date().toISOString()
+      }));
+      if (!products.length) {
+        products = INITIAL_PRODUCTS.map((p, i) => ({
+          id: "local-initial-" + i,
+          url: p.url, title: "", description: "", image: "", manual_store: "", reserved: false,
+          created_at: new Date(Date.now() + i).toISOString(), updated_at: new Date().toISOString()
+        }));
+        saveLocalCache();
+      }
+    } catch {}
+    render();
+    setStatus("локальный режим · сайт работает", "warn");
   }
 }
 
