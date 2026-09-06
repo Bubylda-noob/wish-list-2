@@ -21,10 +21,18 @@
 
   <main class="container">
     <div class="toolbar">
-      <div><strong id="count">0</strong> подарков</div>
-      <input id="search" type="search" placeholder="Поиск по вишлисту…">
+      <div>
+        <strong id="count">0</strong> подарков
+        <span id="syncStatus" class="sync-status"></span>
+      </div>
+      <div class="toolbar-right">
+        <button id="refreshAll" class="refresh-btn">↻ Обновить данные</button>
+        <input id="search" type="search" placeholder="Поиск по вишлисту…">
+      </div>
     </div>
+
     <section id="grid" class="grid"></section>
+
     <div id="empty" class="empty hidden">
       <div class="empty-icon">🎁</div>
       <h2>Пока ничего нет</h2>
@@ -38,7 +46,7 @@
       <h2>Добавить подарок</h2>
       <p class="muted">
         Вставь ссылку на Ozon, Wildberries, Детский мир или OZ.
-        Сайт попробует автоматически получить название, фото и описание товара.
+        Сайт попробует получить настоящие название, фото и описание.
       </p>
 
       <label>Ссылка на товар
@@ -46,24 +54,22 @@
       </label>
 
       <div id="autoStatus" class="auto-status"></div>
+      <div id="addError" class="error"></div>
 
       <div class="manual-note">
-        Если магазин заблокирует автоматическое чтение, товар не будет добавлен
-        с выдуманными данными — покажется понятная ошибка.
+        Если магазин блокирует автоматическое чтение, мы не будем показывать
+        выдуманную фотографию. Можно использовать ручное заполнение ниже.
       </div>
 
-      <div class="manual-fields">
-        <details>
-          <summary>Заполнить вручную</summary>
-          <div class="form-row">
-            <label>Название<input id="titleInput" placeholder="Название"></label>
-            <label>Фото (URL)<input id="imageInput" type="url" placeholder="https://.../photo.jpg"></label>
-          </div>
-          <label>Описание<textarea id="descInput" rows="4" placeholder="Описание…"></textarea></label>
-        </details>
-      </div>
+      <details class="manual-fields">
+        <summary>Заполнить вручную</summary>
+        <div class="form-row">
+          <label>Название<input id="titleInput" placeholder="Название"></label>
+          <label>Фото (URL)<input id="imageInput" type="url" placeholder="https://.../photo.jpg"></label>
+        </div>
+        <label>Описание<textarea id="descInput" rows="4" placeholder="Описание…"></textarea></label>
+      </details>
 
-      <div id="addError" class="error"></div>
       <button class="primary" id="saveProduct">Добавить в вишлист</button>
     </div>
   </div>
@@ -71,7 +77,7 @@
   <div class="modal hidden" id="viewModal" aria-hidden="true">
     <div class="modal-card product-modal">
       <button class="close" data-close="viewModal">×</button>
-      <img id="viewImage" class="view-image" alt="">
+      <div id="viewImageWrap" class="view-image-wrap"></div>
       <div class="store-badge" id="viewStore"></div>
       <h2 id="viewTitle"></h2>
       <p id="viewDesc" class="description"></p>

@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/product.js": {
-      "maxDuration": 15
+      "maxDuration": 30
     }
   }
 }

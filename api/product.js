@@ -5,91 +5,96 @@ const ALLOWED_HOSTS = [
   "oz.by"
 ];
 
-function isAllowedHost(hostname) {
+function allowed(hostname) {
   const h = hostname.toLowerCase();
-  return ALLOWED_HOSTS.some(base => h === base || h.endsWith("." + base));
+  return ALLOWED_HOSTS.some(x => h === x || h.endsWith("." + x));
 }
 
-function decodeHtml(value = "") {
-  return value
+function clean(v) {
+  return String(v || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&#x27;/g, "'")
     .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#x2F;/g, "/")
-    .replace(/&#x27;/g, "'")
     .trim();
 }
 
-function clean(value = "") {
-  return decodeHtml(String(value))
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+function meta(html, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const a = new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["']`, "i");
+  const b = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["']`, "i");
+  return clean((html.match(a) || html.match(b) || [,""])[1]);
 }
 
-function meta(html, property) {
-  const re = new RegExp(
-    `<meta[^>]+(?:property|name)=["']${property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'][^>]+content=["']([^"']+)["']`,
-    "i"
-  );
-  const re2 = new RegExp(
-    `<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']`,
-    "i"
-  );
-  return clean((html.match(re) || html.match(re2) || [,""])[1]);
-}
-
-function jsonLdProducts(html) {
-  const scripts = [...html.matchAll(
-    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-  )];
-
-  for (const match of scripts) {
+function jsonLd(html) {
+  for (const m of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
     try {
-      const data = JSON.parse(match[1].trim());
-      const items = Array.isArray(data) ? data : [data];
+      const parsed = JSON.parse(m[1].trim());
+      const all = Array.isArray(parsed) ? parsed : [parsed];
       const flat = [];
-
-      for (const item of items) {
-        if (item && Array.isArray(item["@graph"])) flat.push(...item["@graph"]);
-        else flat.push(item);
+      for (const x of all) {
+        if (x && Array.isArray(x["@graph"])) flat.push(...x["@graph"]);
+        else flat.push(x);
       }
-
-      const product = flat.find(x => x && (
-        x["@type"] === "Product" ||
-        (Array.isArray(x["@type"]) && x["@type"].includes("Product"))
-      ));
-
-      if (product) {
-        let image = product.image;
+      const p = flat.find(x => x && (x["@type"] === "Product" ||
+        (Array.isArray(x["@type"]) && x["@type"].includes("Product"))));
+      if (p) {
+        let image = p.image;
         if (Array.isArray(image)) image = image[0];
         if (image && typeof image === "object") image = image.url;
-
-        return {
-          title: clean(product.name),
-          description: clean(product.description),
-          image: clean(image || "")
-        };
+        return {title:clean(p.name), description:clean(p.description), image:clean(image)};
       }
-    } catch (_) {}
+    } catch {}
   }
   return {};
 }
 
-function firstImage(html) {
-  return meta(html, "og:image") ||
-    meta(html, "twitter:image") ||
-    ((html.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i) || [,""])[1]);
+async function microlink(url) {
+  const endpoint = "https://api.microlink.io/?url=" + encodeURIComponent(url) +
+    "&meta=true&data.title.selector=title&data.description.selector=meta[name='description']";
+  const r = await fetch(endpoint, {
+    headers: { "Accept": "application/json", "User-Agent": "Wishlist/3.0" }
+  });
+  if (!r.ok) throw new Error("Microlink HTTP " + r.status);
+  const j = await r.json();
+  const d = j.data || {};
+  return {
+    title: clean(d.title),
+    description: clean(d.description),
+    image: clean(typeof d.image === "string" ? d.image : d.image?.url)
+  };
 }
 
-function normalizeImage(url, base) {
-  if (!url) return "";
-  try { return new URL(url, base).href; } catch { return ""; }
+async function directFetch(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const r = await fetch(url, {
+      redirect:"follow",
+      signal:controller.signal,
+      headers:{
+        "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
+        "Accept":"text/html,application/xhtml+xml"
+      }
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const finalUrl = new URL(r.url);
+    if (!allowed(finalUrl.hostname)) throw new Error("Redirected outside allowed hosts");
+    const html = await r.text();
+    const ld = jsonLd(html);
+    return {
+      title: ld.title || meta(html,"og:title") || clean((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)||[,""])[1]),
+      description: ld.description || meta(html,"og:description") || meta(html,"description"),
+      image: ld.image || meta(html,"og:image") || meta(html,"twitter:image"),
+      sourceUrl: finalUrl.href
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=3600");
@@ -97,78 +102,46 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") return res.status(405).json({error:"Method not allowed"});
 
-  const raw = req.query?.url;
-  if (!raw || typeof raw !== "string") {
-    return res.status(400).json({error:"Не передана ссылка на товар."});
-  }
+  const raw = req.query && req.query.url;
+  if (!raw) return res.status(400).json({error:"Не передана ссылка на товар."});
 
   let input;
-  try {
-    input = new URL(raw);
-  } catch {
+  try { input = new URL(raw); } catch {
     return res.status(400).json({error:"Некорректная ссылка."});
   }
 
-  if (!["http:", "https:"].includes(input.protocol) || !isAllowedHost(input.hostname)) {
-    return res.status(400).json({
-      error:"Поддерживаются ссылки только на Ozon, Wildberries, Детский мир и OZ."
-    });
+  if (!["http:","https:"].includes(input.protocol) || !allowed(input.hostname)) {
+    return res.status(400).json({error:"Поддерживаются Ozon, Wildberries, Детский мир и OZ."});
   }
+
+  let data = {};
+  let microlinkError = "";
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    data = await microlink(input.href);
+  } catch (e) {
+    microlinkError = e.message || "Microlink error";
+  }
 
-    const response = await fetch(input.href, {
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; WishlistProductReader/2.0)",
-        "Accept": "text/html,application/xhtml+xml"
-      }
-    });
-
-    clearTimeout(timeout);
-
-    const finalUrl = new URL(response.url);
-    if (!isAllowedHost(finalUrl.hostname)) {
-      return res.status(400).json({error:"Ссылка перенаправила на неподдерживаемый домен."});
-    }
-
-    if (!response.ok) {
-      return res.status(502).json({error:`Магазин вернул ошибку HTTP ${response.status}.`});
-    }
-
-    const html = await response.text();
-    const ld = jsonLdProducts(html);
-
-    const title = ld.title || meta(html, "og:title") ||
-      clean((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [,""])[1]);
-
-    const description = ld.description || meta(html, "og:description") ||
-      meta(html, "description");
-
-    const image = normalizeImage(
-      ld.image || firstImage(html),
-      finalUrl.href
-    );
-
-    if (!title && !image && !description) {
-      return res.status(422).json({
-        error:"Магазин не отдал данные товара. Возможно, сработала антибот-защита."
+  if (!data.title && !data.image && !data.description) {
+    try {
+      data = await directFetch(input.href);
+    } catch (e) {
+      return res.status(502).json({
+        error:"Магазин не отдал данные товара. Возможно, сработала антибот-защита. Попробуй кнопку «Обновить данные» ещё раз позже."
       });
     }
-
-    return res.status(200).json({
-      title: title || "Товар",
-      image,
-      description: description || "",
-      sourceUrl: finalUrl.href
-    });
-  } catch (err) {
-    const message = err?.name === "AbortError"
-      ? "Магазин не ответил вовремя."
-      : "Не удалось получить страницу товара. Магазин мог заблокировать автоматический запрос.";
-    return res.status(502).json({error: message});
   }
-}
+
+  if (!data.title && !data.image && !data.description) {
+    return res.status(422).json({error:"Не удалось найти данные товара."});
+  }
+
+  return res.status(200).json({
+    title:data.title || "Товар",
+    description:data.description || "",
+    image:data.image || "",
+    sourceUrl:input.href,
+    reader:microlinkError ? "direct" : "microlink"
+  });
+};

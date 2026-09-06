@@ -12,30 +12,29 @@ const INITIAL_PRODUCTS = [
   {url:"https://detmir.by/product/index/id/3156071/"}
 ];
 
-const fallbackImages = [
-  "https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=900&q=80"
-];
-
-const key = "arinaWishlistV2";
-const oldKey = "arinaWishlistV1";
+const key = "arinaWishlistV3";
+const oldKeys = ["arinaWishlistV2", "arinaWishlistV1"];
 let products = JSON.parse(localStorage.getItem(key) || "null");
+let activeId = null;
 
 if (!products) {
-  const old = JSON.parse(localStorage.getItem(oldKey) || "null");
-  products = old || INITIAL_PRODUCTS.map((p, i) => ({
-    ...p,
-    id: crypto.randomUUID(),
-    title: "",
-    description: "",
-    image: ""
+  let old = null;
+  for (const k of oldKeys) {
+    try {
+      old = JSON.parse(localStorage.getItem(k) || "null");
+      if (old) break;
+    } catch {}
+  }
+  products = old || INITIAL_PRODUCTS.map(p => ({...p}));
+  products = products.map(p => ({
+    id: p.id || crypto.randomUUID(),
+    url: p.url || "",
+    title: p.title || "",
+    description: p.description || "",
+    image: p.image || ""
   }));
   save();
 }
-
-let activeId = null;
 
 function save() {
   localStorage.setItem(key, JSON.stringify(products));
@@ -49,9 +48,7 @@ function storeName(url) {
     if (h.includes("detmir")) return "Детский мир";
     if (h.includes("oz.by")) return "OZ";
     return h;
-  } catch {
-    return "Магазин";
-  }
+  } catch { return "Магазин"; }
 }
 
 function esc(s) {
@@ -60,8 +57,12 @@ function esc(s) {
   }[m]));
 }
 
-function productImage(p, i = 0) {
-  return p.image || fallbackImages[i % fallbackImages.length];
+function imageHtml(p) {
+  if (!p.image) {
+    return `<div class="no-image"><span>🖼️</span><small>Фото не получено</small></div>`;
+  }
+  return `<img class="card-img" src="${esc(p.image)}" alt="" loading="lazy"
+    onerror="this.closest('.card').querySelector('.card-img').outerHTML='<div class=&quot;no-image&quot;><span>🖼️</span><small>Фото недоступно</small></div>'">`;
 }
 
 function render() {
@@ -73,13 +74,14 @@ function render() {
 
   document.getElementById("count").textContent = products.length;
   document.getElementById("empty").classList.toggle("hidden", list.length !== 0);
-  document.getElementById("grid").innerHTML = list.map((p, i) => `
+
+  document.getElementById("grid").innerHTML = list.map(p => `
     <article class="card" data-id="${esc(p.id)}">
-      <img class="card-img" src="${esc(productImage(p, i))}" alt="" loading="lazy"
-           onerror="this.src='${fallbackImages[0]}'">
+      <div class="card-media">${imageHtml(p)}</div>
       <div class="card-body">
         <div class="card-store">${esc(storeName(p.url))}</div>
-        <div class="card-title">${esc(p.title || "Без названия")}</div>
+        <div class="card-title">${esc(p.title || "Данные товара ещё не получены")}</div>
+        <div class="card-open">Открыть карточку →</div>
       </div>
     </article>
   `).join("");
@@ -87,6 +89,12 @@ function render() {
   document.querySelectorAll(".card").forEach(c =>
     c.onclick = () => openView(c.dataset.id)
   );
+}
+
+function setStatus(text, type = "") {
+  const el = document.getElementById("syncStatus");
+  el.textContent = text;
+  el.className = "sync-status " + type;
 }
 
 function openModal(id) {
@@ -102,24 +110,73 @@ function openView(id) {
   const p = products.find(x => x.id === id);
   if (!p) return;
 
-  document.getElementById("viewImage").src = productImage(p);
-  document.getElementById("viewTitle").textContent = p.title || "Без названия";
-  document.getElementById("viewDesc").textContent = p.description || "Описание не найдено.";
+  const wrap = document.getElementById("viewImageWrap");
+  wrap.innerHTML = p.image
+    ? `<img id="viewImage" class="view-image" src="${esc(p.image)}" alt="">`
+    : `<div class="view-no-image">Фото товара не получено</div>`;
+
+  document.getElementById("viewTitle").textContent =
+    p.title || "Данные товара ещё не получены";
+  document.getElementById("viewDesc").textContent =
+    p.description || "Описание не получено.";
   document.getElementById("viewStore").textContent = storeName(p.url);
-  document.getElementById("viewLink").href = p.url;
+
+  const link = document.getElementById("viewLink");
+  link.href = p.url;
+  link.onclick = () => {
+    // Надёжно открываем исходную страницу в новой вкладке.
+    window.open(p.url, "_blank", "noopener,noreferrer");
+    return false;
+  };
+
   openModal("viewModal");
 }
 
 async function fetchProduct(url) {
   const response = await fetch("/api/product?url=" + encodeURIComponent(url), {
-    headers: { "Accept": "application/json" }
+    headers: { "Accept": "application/json" },
+    cache: "no-store"
   });
   const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data.error || "Не удалось получить данные товара.");
-  }
+  if (!response.ok) throw new Error(data.error || "Не удалось получить данные товара.");
   return data;
+}
+
+async function refreshOne(p) {
+  const data = await fetchProduct(p.url);
+  if (data.title) p.title = data.title;
+  if (data.description) p.description = data.description;
+  if (data.image) p.image = data.image;
+  if (data.sourceUrl) p.url = data.sourceUrl;
+  return p;
+}
+
+async function refreshAll() {
+  const btn = document.getElementById("refreshAll");
+  btn.disabled = true;
+  setStatus("обновляю…");
+
+  let ok = 0, failed = 0;
+  for (const p of products) {
+    if (!p.url) continue;
+    try {
+      await refreshOne(p);
+      ok++;
+      save();
+      render();
+    } catch {
+      failed++;
+    }
+  }
+
+  btn.disabled = false;
+  if (failed) {
+    setStatus(`готово: ${ok}, не удалось: ${failed}`, "warn");
+  } else {
+    setStatus(`обновлено: ${ok}`, "ok");
+  }
+  save();
+  render();
 }
 
 function setLoading(isLoading) {
@@ -129,31 +186,23 @@ function setLoading(isLoading) {
 }
 
 document.getElementById("openAdd").onclick = () => openModal("addModal");
+document.getElementById("refreshAll").onclick = refreshAll;
+document.getElementById("search").oninput = render;
 
 document.querySelectorAll("[data-close]").forEach(b =>
   b.onclick = () => closeModal(b.dataset.close)
 );
 
 document.querySelectorAll(".modal").forEach(m =>
-  m.onclick = e => {
-    if (e.target === m) closeModal(m.id);
-  }
+  m.onclick = e => { if (e.target === m) closeModal(m.id); }
 );
-
-document.getElementById("search").oninput = render;
-
-document.getElementById("urlInput").addEventListener("paste", () => {
-  setTimeout(async () => {
-    const url = document.getElementById("urlInput").value.trim();
-    if (!url) return;
-    const hint = document.getElementById("autoStatus");
-    hint.textContent = "Ссылка вставлена — можно нажать «Добавить в вишлист».";
-  }, 50);
-});
 
 document.getElementById("saveProduct").onclick = async () => {
   const url = document.getElementById("urlInput").value.trim();
   const error = document.getElementById("addError");
+  const titleManual = document.getElementById("titleInput").value.trim();
+  const imageManual = document.getElementById("imageInput").value.trim();
+  const descManual = document.getElementById("descInput").value.trim();
   error.textContent = "";
 
   try {
@@ -167,28 +216,32 @@ document.getElementById("saveProduct").onclick = async () => {
   setLoading(true);
 
   try {
-    const data = await fetchProduct(url);
+    let data = {};
+    try {
+      data = await fetchProduct(url);
+    } catch (apiError) {
+      // Если пользователь заполнил ручные поля, разрешаем ручное добавление.
+      if (!titleManual && !imageManual && !descManual) throw apiError;
+    }
 
     products.unshift({
       id: crypto.randomUUID(),
       url,
-      title: data.title || "Новый подарок",
-      image: data.image || "",
-      description: data.description || ""
+      title: data.title || titleManual || "Новый подарок",
+      image: data.image || imageManual || "",
+      description: data.description || descManual || ""
     });
 
     save();
     render();
     closeModal("addModal");
 
-    ["urlInput", "titleInput", "imageInput", "descInput"].forEach(id => {
-      document.getElementById(id).value = "";
-    });
+    ["urlInput", "titleInput", "imageInput", "descInput"].forEach(id =>
+      document.getElementById(id).value = ""
+    );
     document.getElementById("autoStatus").textContent = "";
   } catch (e) {
-    error.textContent =
-      e.message ||
-      "Не удалось автоматически получить товар. Магазин мог заблокировать запрос.";
+    error.textContent = e.message || "Не удалось получить данные товара.";
   } finally {
     setLoading(false);
   }
@@ -203,3 +256,7 @@ document.getElementById("deleteProduct").onclick = () => {
 };
 
 render();
+
+// ВАЖНО: старые карточки автоматически обновляются при загрузке.
+// Раньше проект этого не делал, поэтому у пользователя оставались заглушки.
+setTimeout(refreshAll, 250);
