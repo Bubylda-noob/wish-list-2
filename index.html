@@ -45,61 +45,32 @@
       <button class="close" data-close="addModal">×</button>
       <h2>Добавить подарок</h2>
       <p class="muted">
-        Для Детского мира и других доступных страниц можно попробовать автоматический импорт.
-        Для Ozon и Wildberries можно без проблем добавить товар вручную.
+        Вставь ссылку на Ozon, Wildberries, Детский мир или OZ.
+        Сайт попробует получить настоящие название, фото и описание.
       </p>
 
-      <div class="add-tabs">
-        <button class="add-tab active" id="autoTab" type="button">Автоматически</button>
-        <button class="add-tab" id="manualTab" type="button">Вручную</button>
+      <label>Ссылка на товар
+        <input id="urlInput" type="url" placeholder="https://...">
+      </label>
+
+      <div id="autoStatus" class="auto-status"></div>
+      <div id="addError" class="error"></div>
+
+      <div class="manual-note">
+        Если магазин блокирует автоматическое чтение, мы не будем показывать
+        выдуманную фотографию. Можно использовать ручное заполнение ниже.
       </div>
 
-      <div id="autoForm">
-        <label>Ссылка на товар
-          <input id="urlInput" type="url" placeholder="https://www.ozon.by/...">
-        </label>
-        <div id="autoStatus" class="auto-status"></div>
-        <div id="addError" class="error"></div>
-        <button class="primary" id="saveProduct">Получить данные и добавить</button>
-      </div>
-
-      <div id="manualForm" class="hidden">
-        <label>Ссылка на товар
-          <input id="manualUrlInput" type="url" placeholder="https://www.ozon.by/...">
-        </label>
-
+      <details class="manual-fields">
+        <summary>Заполнить вручную</summary>
         <div class="form-row">
-          <label>Магазин
-            <select id="manualStore">
-              <option>Ozon</option>
-              <option>Wildberries</option>
-              <option>Детский мир</option>
-              <option>OZ</option>
-              <option>Другой</option>
-            </select>
-          </label>
-          <label>Название товара
-            <input id="manualTitle" placeholder="Например: Nike Air Max">
-          </label>
+          <label>Название<input id="titleInput" placeholder="Название"></label>
+          <label>Фото (URL)<input id="imageInput" type="url" placeholder="https://.../photo.jpg"></label>
         </div>
+        <label>Описание<textarea id="descInput" rows="4" placeholder="Описание…"></textarea></label>
+      </details>
 
-        <label>Фото товара — URL изображения
-          <input id="manualImage" type="url" placeholder="https://...jpg">
-        </label>
-
-        <label>Описание
-          <textarea id="manualDesc" rows="5" placeholder="Напиши описание товара…"></textarea>
-        </label>
-
-        <div class="manual-help">
-          <b>Как взять фото с Ozon/Wildberries:</b><br>
-          открой фото товара → правой кнопкой мыши → <b>«Копировать адрес изображения»</b> →
-          вставь адрес сюда.
-        </div>
-
-        <div id="manualError" class="error"></div>
-        <button class="primary" id="addManual">Добавить товар</button>
-      </div>
+      <button class="primary" id="saveProduct">Добавить в вишлист</button>
     </div>
   </div>
 
