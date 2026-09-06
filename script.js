@@ -149,13 +149,22 @@ function saveLocalCache() {
 
 async function initSupabase() {
   const cfg = window.SUPABASE_CONFIG || {};
-  if (!cfg.url || !cfg.anonKey || cfg.url.includes("YOUR-PROJECT")) {
-    throw new Error("Не настроен Supabase. Создай supabase-config.js по инструкции в README.");
+  if (!cfg.url || !cfg.anonKey || cfg.url.includes("YOUR-PROJECT") || cfg.anonKey.includes("YOUR_PUBLISHABLE")) {
+    supabase = null;
+    return false;
   }
   if (!window.supabase?.createClient) {
-    throw new Error("Не загрузилась библиотека Supabase.");
+    supabase = null;
+    return false;
   }
-  supabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+  try {
+    supabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+    return true;
+  } catch (e) {
+    console.warn("Supabase disabled:", e);
+    supabase = null;
+    return false;
+  }
 }
 
 function normalizeRow(row) {
@@ -173,6 +182,28 @@ function normalizeRow(row) {
 }
 
 async function loadProducts() {
+  if (!supabase) {
+    products = localProducts().map((p, i) => ({
+      id: p.id || "local-" + i + "-" + btoa(unescape(encodeURIComponent(p.url))).slice(0, 12),
+      url: p.url,
+      title: p.title,
+      description: p.description,
+      image: p.image,
+      manual_store: p.manual_store,
+      reserved: p.reserved,
+      created_at: p.created_at || new Date().toISOString(),
+      updated_at: p.updated_at || new Date().toISOString()
+    }));
+    if (!products.length) {
+      products = INITIAL_PRODUCTS.map((p, i) => ({
+        id: "local-initial-" + i,
+        url: p.url, title: "", description: "", image: "", manual_store: "", reserved: false,
+        created_at: new Date(Date.now() + i).toISOString(), updated_at: new Date().toISOString()
+      }));
+      saveLocalCache();
+    }
+    return;
+  }
   const { data, error } = await supabase
     .from("wishlist_products")
     .select("id,url,title,description,image,manual_store,reserved,created_at,updated_at")
@@ -183,6 +214,7 @@ async function loadProducts() {
 }
 
 async function migrateLocalProducts() {
+  if (!supabase) return;
   if (localStorage.getItem(MIGRATION_KEY)) return;
 
   const old = localProducts();
@@ -230,6 +262,7 @@ async function migrateLocalProducts() {
 }
 
 function subscribeRealtime() {
+  if (!supabase) { setStatus("офлайн · данные только на этом устройстве", "warn"); return; }
   if (realtimeChannel) supabase.removeChannel(realtimeChannel);
 
   realtimeChannel = supabase
@@ -266,6 +299,15 @@ function subscribeRealtime() {
 }
 
 async function updateProduct(id, patch) {
+  if (!supabase) {
+    const index = products.findIndex(p => p.id === id);
+    if (index < 0) throw new Error("Товар не найден");
+    products[index] = { ...products[index], ...patch, updated_at: new Date().toISOString() };
+    saveLocalCache();
+    render();
+    if (activeId === id) updateViewReservation(products[index]);
+    return products[index];
+  }
   const { data, error } = await supabase
     .from("wishlist_products")
     .update(patch)
@@ -283,6 +325,18 @@ async function updateProduct(id, patch) {
 }
 
 async function insertProduct(product) {
+  if (!supabase) {
+    const created = {
+      id: "local-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+      ...product,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    products.push(created);
+    saveLocalCache();
+    render();
+    return created;
+  }
   const { data, error } = await supabase
     .from("wishlist_products")
     .insert(product)
@@ -297,8 +351,10 @@ async function insertProduct(product) {
 }
 
 async function deleteProduct(id) {
-  const { error } = await supabase.from("wishlist_products").delete().eq("id", id);
-  if (error) throw error;
+  if (supabase) {
+    const { error } = await supabase.from("wishlist_products").delete().eq("id", id);
+    if (error) throw error;
+  }
   products = products.filter(p => p.id !== id);
   saveLocalCache();
   render();
@@ -372,8 +428,8 @@ function showAddMode(mode) {
 
 async function start() {
   try {
-    await initSupabase();
-    setStatus("подключаюсь к общей базе…");
+    const shared = await initSupabase();
+    setStatus(shared ? "подключаюсь к общей базе…" : "локальный режим · Supabase ещё не настроен", shared ? "" : "warn");
     await loadProducts();
 
     // Одноразово переносим товары из старой localStorage-версии,
@@ -383,7 +439,7 @@ async function start() {
     render();
     subscribeRealtime();
 
-    // После загрузки общей базы пробуем обновить метаданные карточек.
+    // После загрузки пробуем обновить метаданные карточек.
     setTimeout(() => refreshAll().catch(() => {}), 400);
   } catch (e) {
     console.error(e);
